@@ -21,10 +21,22 @@ load_dotenv()
 
 # OpenAI 클라이언트 초기화
 try:
-    client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+    openai_api_key = os.getenv("OPENAI_API_KEY")
+    if not openai_api_key:
+        logger.error("OPENAI_API_KEY가 설정되지 않았습니다.")
+        raise ValueError("OPENAI_API_KEY가 필요합니다.")
+        
+    client = OpenAI()  # 환경 변수에서 자동으로 API 키를 가져옵니다
+    
+    # 클라이언트 테스트
+    test_response = client.chat.completions.create(
+        model="gpt-3.5-turbo",
+        messages=[{"role": "user", "content": "test"}],
+        max_tokens=5
+    )
     logger.info("OpenAI 클라이언트가 성공적으로 초기화되었습니다.")
 except Exception as e:
-    logger.error(f"OpenAI 클라이언트 초기화 중 오류 발생: {str(e)}")
+    logger.error(f"OpenAI 클라이언트 초기화 중 오류 발생: {str(e)}", exc_info=True)
     client = None
 
 class DotoriChatbot:
@@ -33,10 +45,10 @@ class DotoriChatbot:
         self.size_data = []
         self.faq_data = []
         
-        # OpenAI API 키 확인
-        if not os.getenv("OPENAI_API_KEY"):
-            logger.error("OPENAI_API_KEY가 설정되지 않았습니다.")
-            raise ValueError("OPENAI_API_KEY가 필요합니다.")
+        # OpenAI 클라이언트 확인
+        if client is None:
+            logger.error("OpenAI 클라이언트가 초기화되지 않았습니다.")
+            raise RuntimeError("OpenAI 클라이언트 초기화 실패")
             
         # Google Sheets 자격 증명 확인
         if not os.getenv("GOOGLE_APPLICATION_CREDENTIALS_JSON"):
@@ -47,11 +59,6 @@ class DotoriChatbot:
         if not os.getenv("PAGE_ACCESS_TOKEN"):
             logger.error("PAGE_ACCESS_TOKEN이 설정되지 않았습니다.")
             raise ValueError("Facebook 페이지 액세스 토큰이 필요합니다.")
-            
-        # OpenAI 클라이언트 확인
-        if client is None:
-            logger.error("OpenAI 클라이언트가 초기화되지 않았습니다.")
-            raise RuntimeError("OpenAI 클라이언트 초기화 실패")
             
         self.load_data()
         
