@@ -260,7 +260,7 @@ chatbot = DotoriChatbot()
 
 # 웹훅 검증 토큰
 VERIFY_TOKEN = "dotori_chatbot_verify_token"
-PAGE_ACCESS_TOKEN = "EAAGr57aUTyUBOZC3ZCAR3W8rGMXsWB07wyZBfn0WgTbNnt8aNYg0FfxQU6zl6XkeWH6aKnmBgPgJ0Myl6YvlrZAZBu2B5Y1PQ0ASHFFz9GAd2LwrQeZAZAjidZBKZCSHFDiA8FamekQ4LxJDGs3ItV4dyAQs3Cn9RzagRZChvR3Qbz6jDrZBV33NuORH4mgCnVmoUSWxqECZBcL8ZC8ZBcqAhG0gZDZD"
+PAGE_ACCESS_TOKEN = "EAAGr57aUTyUBO2zxcthfJX2o9LR2ykmAqq3Ddi5jt0fYjuQ7uXowm4LZAYkbEG3x9UnCkKnVUWurSLZBgTqUMtjPJV5eSGPPsgcDDBWZCyPMnntXJC0VAnz4XrVGXod38ky9Xq2y5dp96JvFdP3gABHswumYPhfW6PP8lYZAwxIPUZA8hXbOWDRarGRXcz2PPM1DHFncXyelv6TKgZCgZDZD"
 
 def send_message(recipient_id: str, message_text: str):
     """페이스북 메신저로 메시지를 전송합니다."""
