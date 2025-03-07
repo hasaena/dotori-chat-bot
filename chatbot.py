@@ -19,6 +19,20 @@ logger = logging.getLogger(__name__)
 # 환경 변수 로드
 load_dotenv()
 
+# 환경 변수 검증
+required_env_vars = {
+    "OPENAI_API_KEY": os.getenv("OPENAI_API_KEY"),
+    "GOOGLE_APPLICATION_CREDENTIALS_JSON": os.getenv("GOOGLE_APPLICATION_CREDENTIALS_JSON"),
+    "PAGE_ACCESS_TOKEN": os.getenv("PAGE_ACCESS_TOKEN")
+}
+
+for var_name, var_value in required_env_vars.items():
+    if not var_value:
+        logger.error(f"{var_name}가 설정되지 않았습니다.")
+        raise ValueError(f"{var_name}가 필요합니다.")
+    else:
+        logger.info(f"{var_name} 설정 확인 완료")
+
 # OpenAI 클라이언트 초기화
 try:
     openai_api_key = os.getenv("OPENAI_API_KEY")
@@ -242,32 +256,72 @@ chatbot = DotoriChatbot()
 
 # 웹훅 검증 토큰
 VERIFY_TOKEN = "dotori_chatbot_verify_token"
-PAGE_ACCESS_TOKEN = os.getenv("PAGE_ACCESS_TOKEN")
+PAGE_ACCESS_TOKEN = "EAAGr57aUTyUBOZC3ZCAR3W8rGMXsWB07wyZBfn0WgTbNnt8aNYg0FfxQU6zl6XkeWH6aKnmBgPgJ0Myl6YvlrZAZBu2B5Y1PQ0ASHFFz9GAd2LwrQeZAZAjidZBKZCSHFDiA8FamekQ4LxJDGs3ItV4dyAQs3Cn9RzagRZChvR3Qbz6jDrZBV33NuORH4mgCnVmoUSWxqECZBcL8ZC8ZBcqAhG0gZDZD"
 
 def send_message(recipient_id: str, message_text: str):
     """페이스북 메신저로 메시지를 전송합니다."""
     try:
         url = f"https://graph.facebook.com/v18.0/me/messages"
         params = {"access_token": PAGE_ACCESS_TOKEN}
-        headers = {"Content-Type": "application/json"}
+        headers = {
+            "Content-Type": "application/json",
+            "Accept": "application/json"
+        }
         
         data = {
             "recipient": {"id": recipient_id},
             "message": {"text": message_text}
         }
         
-        logger.info(f"Sending message to {recipient_id}: {message_text}")
-        response = requests.post(url, params=params, json=data, headers=headers)
+        logger.info(f"Facebook API 호출 시작 - URL: {url}")
+        logger.info(f"Facebook 페이지 액세스 토큰 길이: {len(PAGE_ACCESS_TOKEN)}")
+        logger.debug(f"요청 데이터: {json.dumps(data, ensure_ascii=False)}")
         
-        if response.status_code != 200:
-            logger.error(f"Failed to send message: {response.status_code} - {response.text}")
+        # 10초 타임아웃 설정
+        response = requests.post(
+            url, 
+            params=params, 
+            json=data, 
+            headers=headers,
+            timeout=10
+        )
+        
+        try:
+            response_data = response.json()
+            logger.debug(f"Facebook 응답 상태 코드: {response.status_code}")
+            logger.debug(f"Facebook 응답 헤더: {dict(response.headers)}")
+            logger.debug(f"Facebook 응답 데이터: {json.dumps(response_data, ensure_ascii=False)}")
+            
+            if response.status_code != 200:
+                logger.error(f"Facebook API 오류 - HTTP {response.status_code}")
+                logger.error(f"응답 데이터: {json.dumps(response_data, ensure_ascii=False)}")
+                return False
+                
+            if 'error' in response_data:
+                error_data = response_data['error']
+                logger.error(f"Facebook API 오류 발생:")
+                logger.error(f"  - 메시지: {error_data.get('message')}")
+                logger.error(f"  - 타입: {error_data.get('type')}")
+                logger.error(f"  - 코드: {error_data.get('code')}")
+                logger.error(f"  - FBTrace ID: {error_data.get('fbtrace_id')}")
+                return False
+                
+            logger.info(f"메시지 전송 성공 - recipient_id: {recipient_id}")
+            return True
+            
+        except json.JSONDecodeError as e:
+            logger.error(f"Facebook 응답 JSON 파싱 오류: {str(e)}")
+            logger.error(f"원본 응답: {response.text}")
             return False
             
-        logger.info(f"Message sent successfully to {recipient_id}")
-        return True
-        
+    except requests.exceptions.Timeout:
+        logger.error(f"Facebook API 타임아웃 - recipient_id: {recipient_id}")
+        return False
+    except requests.exceptions.ConnectionError as e:
+        logger.error(f"Facebook API 연결 오류: {str(e)}")
+        return False
     except Exception as e:
-        logger.error(f"Error sending message: {e}", exc_info=True)
+        logger.error(f"메시지 전송 중 예외 발생: {str(e)}", exc_info=True)
         return False
 
 @app.get("/webhook")
@@ -302,12 +356,16 @@ async def verify_webhook(request: Request):
 async def webhook(request: Request):
     """페이스북 메시지 수신 및 처리"""
     try:
+        # 요청 헤더 로깅
+        headers = dict(request.headers)
+        logger.info(f"수신된 웹훅 헤더: {headers}")
+        
         # 요청 바디 파싱
         try:
             body = await request.json()
-            logger.info(f"웹훅 데이터 수신: {json.dumps(body, indent=2, ensure_ascii=False)}")
+            logger.info(f"수신된 웹훅 데이터: {json.dumps(body, indent=2, ensure_ascii=False)}")
         except json.JSONDecodeError as e:
-            logger.error(f"JSON 파싱 오류: {str(e)}")
+            logger.error(f"웹훅 데이터 JSON 파싱 오류: {str(e)}")
             return {"status": "error", "message": "Invalid JSON format"}
         
         # 페이지 이벤트 검증
@@ -326,40 +384,61 @@ async def webhook(request: Request):
         for entry in entries:
             messaging_events = entry.get("messaging", [])
             if not messaging_events:
+                logger.warning(f"메시징 이벤트 없음 - 엔트리: {entry}")
                 continue
                 
             for event in messaging_events:
                 try:
-                    sender_id = event.get("sender", {}).get("id")
+                    # 이벤트 데이터 검증
+                    if not isinstance(event, dict):
+                        logger.error(f"잘못된 이벤트 형식: {event}")
+                        continue
+                        
+                    sender = event.get("sender", {})
+                    if not isinstance(sender, dict):
+                        logger.error(f"잘못된 발신자 형식: {sender}")
+                        continue
+                        
+                    sender_id = sender.get("id")
                     if not sender_id:
                         logger.warning("발신자 ID 누락")
                         continue
                         
                     message = event.get("message", {})
-                    if not message:
-                        logger.warning(f"메시지 데이터 누락 - 이벤트: {event}")
+                    if not isinstance(message, dict):
+                        logger.error(f"잘못된 메시지 형식: {message}")
                         continue
                         
+                    # 메시지 처리
                     message_text = message.get("text", "").strip()
                     if not message_text:
-                        logger.warning(f"텍스트 메시지 아님 - 발신자: {sender_id}")
+                        logger.warning(f"텍스트 메시지 아님 - 발신자: {sender_id}, 메시지: {message}")
                         send_message(sender_id, "죄송합니다. 텍스트 메시지만 처리할 수 있습니다.")
                         continue
                     
-                    logger.info(f"메시지 처리 - 발신자: {sender_id}, 내용: {message_text}")
+                    logger.info(f"메시지 처리 시작 - 발신자: {sender_id}, 내용: {message_text}")
                     
-                    response = chatbot.process_message(message_text)
-                    if not response:
-                        logger.error("챗봇 응답 생성 실패")
+                    # 챗봇 응답 생성
+                    try:
+                        response = chatbot.process_message(message_text)
+                        if not response:
+                            logger.error("챗봇이 빈 응답을 반환")
+                            send_message(sender_id, "죄송합니다. 응답을 생성하는 중에 문제가 발생했습니다.")
+                            continue
+                    except Exception as e:
+                        logger.error(f"챗봇 응답 생성 중 오류: {str(e)}", exc_info=True)
                         send_message(sender_id, "죄송합니다. 응답을 생성하는 중에 문제가 발생했습니다.")
                         continue
                         
+                    # 응답 전송
                     if not send_message(sender_id, response):
-                        logger.error(f"응답 전송 실패 - 발신자: {sender_id}")
+                        logger.error(f"응답 전송 실패 - 발신자: {sender_id}, 응답: {response}")
                         continue
                         
+                    logger.info(f"메시지 처리 완료 - 발신자: {sender_id}")
+                    
                 except Exception as e:
-                    logger.error(f"메시지 처리 중 오류 발생: {str(e)}", exc_info=True)
+                    logger.error(f"이벤트 처리 중 오류 발생: {str(e)}", exc_info=True)
                     try:
                         if sender_id:
                             send_message(sender_id, "죄송합니다. 메시지 처리 중에 오류가 발생했습니다.")
@@ -370,7 +449,8 @@ async def webhook(request: Request):
         return {"status": "ok"}
         
     except Exception as e:
-        logger.error(f"웹훅 처리 중 오류 발생: {str(e)}", exc_info=True)
+        logger.error(f"웹훅 처리 중 치명적 오류 발생: {str(e)}", exc_info=True)
+        # 500 에러를 반환하지 않고 200 OK를 반환하여 Facebook의 재시도를 방지
         return {"status": "error", "message": "Internal server error"}
 
 if __name__ == "__main__":
