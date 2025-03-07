@@ -273,55 +273,75 @@ def send_message(recipient_id: str, message_text: str):
             "message": {"text": message_text}
         }
         
-        logger.info(f"Facebook API 호출 시작 - URL: {url}")
-        logger.info(f"Facebook 페이지 액세스 토큰 길이: {len(PAGE_ACCESS_TOKEN)}")
-        logger.debug(f"요청 데이터: {json.dumps(data, ensure_ascii=False)}")
+        # API 호출 전 상세 로깅
+        logger.info("=== Facebook API 호출 시작 ===")
+        logger.info(f"URL: {url}")
+        logger.info(f"Headers: {headers}")
+        logger.info(f"Parameters: {params}")
+        logger.info(f"Request Data: {json.dumps(data, ensure_ascii=False)}")
         
-        # 10초 타임아웃 설정
-        response = requests.post(
-            url, 
-            params=params, 
-            json=data, 
-            headers=headers,
-            timeout=10
-        )
-        
+        # API 호출 시도
         try:
-            response_data = response.json()
-            logger.debug(f"Facebook 응답 상태 코드: {response.status_code}")
-            logger.debug(f"Facebook 응답 헤더: {dict(response.headers)}")
-            logger.debug(f"Facebook 응답 데이터: {json.dumps(response_data, ensure_ascii=False)}")
+            response = requests.post(
+                url, 
+                params=params, 
+                json=data, 
+                headers=headers,
+                timeout=10
+            )
             
-            if response.status_code != 200:
-                logger.error(f"Facebook API 오류 - HTTP {response.status_code}")
-                logger.error(f"응답 데이터: {json.dumps(response_data, ensure_ascii=False)}")
+            # 응답 상세 로깅
+            logger.info("=== Facebook API 응답 ===")
+            logger.info(f"Status Code: {response.status_code}")
+            logger.info(f"Response Headers: {dict(response.headers)}")
+            
+            try:
+                response_data = response.json()
+                logger.info(f"Response Body: {json.dumps(response_data, ensure_ascii=False, indent=2)}")
+                
+                if response.status_code != 200:
+                    logger.error(f"=== Facebook API HTTP 오류 ===")
+                    logger.error(f"Status Code: {response.status_code}")
+                    logger.error(f"Error Response: {json.dumps(response_data, ensure_ascii=False, indent=2)}")
+                    return False
+                    
+                if 'error' in response_data:
+                    error_data = response_data['error']
+                    logger.error(f"=== Facebook API 오류 상세 ===")
+                    logger.error(f"Error Message: {error_data.get('message')}")
+                    logger.error(f"Error Type: {error_data.get('type')}")
+                    logger.error(f"Error Code: {error_data.get('code')}")
+                    logger.error(f"Error Subcode: {error_data.get('error_subcode')}")
+                    logger.error(f"FBTrace ID: {error_data.get('fbtrace_id')}")
+                    return False
+                    
+                logger.info("=== Facebook API 호출 성공 ===")
+                return True
+                
+            except json.JSONDecodeError as e:
+                logger.error("=== Facebook API 응답 파싱 오류 ===")
+                logger.error(f"Error: {str(e)}")
+                logger.error(f"Raw Response: {response.text}")
                 return False
                 
-            if 'error' in response_data:
-                error_data = response_data['error']
-                logger.error(f"Facebook API 오류 발생:")
-                logger.error(f"  - 메시지: {error_data.get('message')}")
-                logger.error(f"  - 타입: {error_data.get('type')}")
-                logger.error(f"  - 코드: {error_data.get('code')}")
-                logger.error(f"  - FBTrace ID: {error_data.get('fbtrace_id')}")
-                return False
-                
-            logger.info(f"메시지 전송 성공 - recipient_id: {recipient_id}")
-            return True
-            
-        except json.JSONDecodeError as e:
-            logger.error(f"Facebook 응답 JSON 파싱 오류: {str(e)}")
-            logger.error(f"원본 응답: {response.text}")
+        except requests.exceptions.Timeout:
+            logger.error("=== Facebook API 타임아웃 ===")
+            logger.error(f"Timeout after 10 seconds")
+            return False
+        except requests.exceptions.ConnectionError as e:
+            logger.error("=== Facebook API 연결 오류 ===")
+            logger.error(f"Connection Error: {str(e)}")
+            return False
+        except requests.exceptions.RequestException as e:
+            logger.error("=== Facebook API 요청 오류 ===")
+            logger.error(f"Request Error: {str(e)}")
             return False
             
-    except requests.exceptions.Timeout:
-        logger.error(f"Facebook API 타임아웃 - recipient_id: {recipient_id}")
-        return False
-    except requests.exceptions.ConnectionError as e:
-        logger.error(f"Facebook API 연결 오류: {str(e)}")
-        return False
     except Exception as e:
-        logger.error(f"메시지 전송 중 예외 발생: {str(e)}", exc_info=True)
+        logger.error("=== 예상치 못한 오류 ===")
+        logger.error(f"Error Type: {type(e).__name__}")
+        logger.error(f"Error Message: {str(e)}")
+        logger.error("Stack Trace:", exc_info=True)
         return False
 
 @app.get("/webhook")
