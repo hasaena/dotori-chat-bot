@@ -1,5 +1,5 @@
 from sheets import get_kpop_data, get_size_data, get_faq_data
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, HTTPException
 from dotenv import load_dotenv
 from openai import OpenAI
 import uvicorn
@@ -273,83 +273,104 @@ def send_message(recipient_id: str, message_text: str):
 @app.get("/webhook")
 async def verify_webhook(request: Request):
     """페이스북 웹훅 검증"""
-    params = dict(request.query_params)
-    logger.info(f"Webhook verification request: {params}")
-    
-    mode = params.get("hub.mode")
-    token = params.get("hub.verify_token")
-    challenge = params.get("hub.challenge")
-    
-    if mode and token:
+    try:
+        params = dict(request.query_params)
+        logger.info(f"웹훅 검증 요청 파라미터: {params}")
+        
+        mode = params.get("hub.mode")
+        token = params.get("hub.verify_token")
+        challenge = params.get("hub.challenge")
+        
+        logger.debug(f"검증 데이터 - mode: {mode}, token: {token}, challenge: {challenge}")
+        
+        if not all([mode, token, challenge]):
+            logger.error("필수 파라미터 누락")
+            return {"status": "error", "message": "Missing required parameters"}
+            
         if mode == "subscribe" and token == VERIFY_TOKEN:
-            logger.info("Webhook verified!")
+            logger.info("웹훅 검증 성공")
             return int(challenge)
-        else:
-            logger.error("Verification failed")
-            return {"status": "error", "message": "Invalid verification token"}
-    
-    return {"status": "error", "message": "Missing parameters"}
+            
+        logger.error(f"웹훅 검증 실패 - mode: {mode}, token: {token}")
+        raise HTTPException(status_code=403, detail="Verification failed")
+        
+    except Exception as e:
+        logger.error(f"웹훅 검증 중 오류 발생: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 @app.post("/webhook")
 async def webhook(request: Request):
     """페이스북 메시지 수신 및 처리"""
     try:
-        # 요청 바디 로깅
-        body = await request.json()
-        logger.info(f"Received webhook data: {json.dumps(body, indent=2, ensure_ascii=False)}")
+        # 요청 바디 파싱
+        try:
+            body = await request.json()
+            logger.info(f"웹훅 데이터 수신: {json.dumps(body, indent=2, ensure_ascii=False)}")
+        except json.JSONDecodeError as e:
+            logger.error(f"JSON 파싱 오류: {str(e)}")
+            return {"status": "error", "message": "Invalid JSON format"}
         
-        # 페이지 이벤트가 아닌 경우 처리
+        # 페이지 이벤트 검증
         if body.get("object") != "page":
-            logger.warning(f"Received non-page event: {body.get('object')}")
+            logger.warning(f"잘못된 이벤트 타입: {body.get('object')}")
             return {"status": "error", "message": "Invalid event type"}
         
         # 엔트리 처리
         entries = body.get("entry", [])
-        logger.info(f"Processing {len(entries)} entries")
+        if not entries:
+            logger.warning("엔트리가 없는 웹훅 데이터")
+            return {"status": "ok", "message": "No entries to process"}
+            
+        logger.info(f"처리할 엔트리 수: {len(entries)}")
         
         for entry in entries:
-            logger.debug(f"Processing entry: {entry}")
-            messaging = entry.get("messaging", [])
-            
-            for message_event in messaging:
-                logger.debug(f"Processing message event: {message_event}")
+            messaging_events = entry.get("messaging", [])
+            if not messaging_events:
+                continue
                 
-                sender_id = message_event.get("sender", {}).get("id")
-                if not sender_id:
-                    logger.error("No sender ID found in message event")
-                    continue
-                    
-                message = message_event.get("message", {}).get("text")
-                if not message:
-                    logger.warning(f"No message text found for sender {sender_id}")
-                    continue
-                
-                logger.info(f"Processing message from {sender_id}: {message}")
-                
+            for event in messaging_events:
                 try:
-                    # 챗봇 응답 생성
-                    response = chatbot.process_message(message)
-                    if response:
-                        # 응답 전송
-                        success = send_message(sender_id, response)
-                        if not success:
-                            logger.error(f"Failed to send message to {sender_id}")
-                    else:
-                        logger.error("No response generated from chatbot")
+                    sender_id = event.get("sender", {}).get("id")
+                    if not sender_id:
+                        logger.warning("발신자 ID 누락")
+                        continue
+                        
+                    message = event.get("message", {})
+                    if not message:
+                        logger.warning(f"메시지 데이터 누락 - 이벤트: {event}")
+                        continue
+                        
+                    message_text = message.get("text", "").strip()
+                    if not message_text:
+                        logger.warning(f"텍스트 메시지 아님 - 발신자: {sender_id}")
+                        send_message(sender_id, "죄송합니다. 텍스트 메시지만 처리할 수 있습니다.")
+                        continue
+                    
+                    logger.info(f"메시지 처리 - 발신자: {sender_id}, 내용: {message_text}")
+                    
+                    response = chatbot.process_message(message_text)
+                    if not response:
+                        logger.error("챗봇 응답 생성 실패")
                         send_message(sender_id, "죄송합니다. 응답을 생성하는 중에 문제가 발생했습니다.")
+                        continue
+                        
+                    if not send_message(sender_id, response):
+                        logger.error(f"응답 전송 실패 - 발신자: {sender_id}")
+                        continue
                         
                 except Exception as e:
-                    logger.error(f"Error processing message: {str(e)}", exc_info=True)
-                    send_message(sender_id, "죄송합니다. 메시지 처리 중에 오류가 발생했습니다.")
+                    logger.error(f"메시지 처리 중 오류 발생: {str(e)}", exc_info=True)
+                    try:
+                        if sender_id:
+                            send_message(sender_id, "죄송합니다. 메시지 처리 중에 오류가 발생했습니다.")
+                    except:
+                        pass
+                    continue
         
-        return {"status": "success"}
-        
-    except json.JSONDecodeError as e:
-        logger.error(f"Invalid JSON in request body: {str(e)}", exc_info=True)
-        return {"status": "error", "message": "Invalid JSON format"}
+        return {"status": "ok"}
         
     except Exception as e:
-        logger.error(f"Webhook processing error: {str(e)}", exc_info=True)
+        logger.error(f"웹훅 처리 중 오류 발생: {str(e)}", exc_info=True)
         return {"status": "error", "message": "Internal server error"}
 
 if __name__ == "__main__":
