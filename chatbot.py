@@ -7,6 +7,7 @@ import logging
 import os
 import json
 import requests
+import time
 
 # 로깅 설정
 logging.basicConfig(
@@ -19,43 +20,76 @@ logger = logging.getLogger(__name__)
 load_dotenv()
 
 # OpenAI 클라이언트 초기화
-client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+try:
+    client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+    logger.info("OpenAI 클라이언트가 성공적으로 초기화되었습니다.")
+except Exception as e:
+    logger.error(f"OpenAI 클라이언트 초기화 중 오류 발생: {str(e)}")
+    client = None
 
 class DotoriChatbot:
     def __init__(self):
         self.kpop_data = []
         self.size_data = []
         self.faq_data = []
+        
+        # OpenAI API 키 확인
+        if not os.getenv("OPENAI_API_KEY"):
+            logger.error("OPENAI_API_KEY가 설정되지 않았습니다.")
+            raise ValueError("OPENAI_API_KEY가 필요합니다.")
+            
+        # Google Sheets 자격 증명 확인
+        if not os.getenv("GOOGLE_APPLICATION_CREDENTIALS_JSON"):
+            logger.error("GOOGLE_APPLICATION_CREDENTIALS_JSON가 설정되지 않았습니다.")
+            raise ValueError("Google Sheets 자격 증명이 필요합니다.")
+            
+        # Facebook 페이지 액세스 토큰 확인
+        if not os.getenv("PAGE_ACCESS_TOKEN"):
+            logger.error("PAGE_ACCESS_TOKEN이 설정되지 않았습니다.")
+            raise ValueError("Facebook 페이지 액세스 토큰이 필요합니다.")
+            
+        # OpenAI 클라이언트 확인
+        if client is None:
+            logger.error("OpenAI 클라이언트가 초기화되지 않았습니다.")
+            raise RuntimeError("OpenAI 클라이언트 초기화 실패")
+            
         self.load_data()
         
     def load_data(self):
         """데이터를 로드합니다."""
-        try:
-            logger.debug("K-pop 데이터 로드 시작")
-            self.kpop_data = get_kpop_data()
-            logger.info(f"K-pop 데이터 로드 완료: {len(self.kpop_data)}개")
-        except Exception as e:
-            logger.error(f"K-pop 데이터 로드 실패: {str(e)}", exc_info=True)
-            self.kpop_data = []
-            
-        try:
-            logger.debug("사이즈 데이터 로드 시작")
-            self.size_data = get_size_data()
-            logger.info(f"사이즈 데이터 로드 완료: {len(self.size_data)}개")
-        except Exception as e:
-            logger.error(f"사이즈 데이터 로드 실패: {str(e)}", exc_info=True)
-            self.size_data = []
-            
-        try:
-            logger.debug("FAQ 데이터 로드 시작")
-            self.faq_data = get_faq_data()
-            logger.info(f"FAQ 데이터 로드 완료: {len(self.faq_data)}개")
-        except Exception as e:
-            logger.error(f"FAQ 데이터 로드 실패: {str(e)}", exc_info=True)
-            self.faq_data = []
-            
-        logger.debug(f"전체 데이터 상태 - K-pop: {len(self.kpop_data)}개, Size: {len(self.size_data)}개, FAQ: {len(self.faq_data)}개")
-    
+        success = False
+        retry_count = 0
+        max_retries = 3
+        
+        while not success and retry_count < max_retries:
+            try:
+                logger.debug(f"데이터 로드 시도 #{retry_count + 1}")
+                
+                # K-pop 데이터 로드
+                self.kpop_data = get_kpop_data() or []
+                logger.info(f"K-pop 데이터 로드 완료: {len(self.kpop_data)}개")
+                
+                # 사이즈 데이터 로드
+                self.size_data = get_size_data() or []
+                logger.info(f"사이즈 데이터 로드 완료: {len(self.size_data)}개")
+                
+                # FAQ 데이터 로드
+                self.faq_data = get_faq_data() or []
+                logger.info(f"FAQ 데이터 로드 완료: {len(self.faq_data)}개")
+                
+                success = True
+                logger.info("모든 데이터 로드 완료")
+                
+            except Exception as e:
+                retry_count += 1
+                logger.error(f"데이터 로드 실패 (시도 #{retry_count}): {str(e)}", exc_info=True)
+                if retry_count < max_retries:
+                    logger.info(f"{5 * retry_count}초 후 재시도...")
+                    time.sleep(5 * retry_count)
+                else:
+                    logger.error("최대 재시도 횟수 초과")
+                    raise
+                    
     def find_product(self, query):
         """상품 정보를 검색합니다."""
         for product in self.kpop_data:
@@ -104,6 +138,10 @@ class DotoriChatbot:
     def get_ai_response(self, user_message: str, context: dict = None) -> str:
         """OpenAI API를 사용하여 응답을 생성합니다."""
         try:
+            if not user_message:
+                logger.warning("빈 메시지가 전달되었습니다.")
+                return "죄송합니다. 메시지를 이해하지 못했습니다."
+                
             # 시스템 메시지 구성
             system_message = """당신은 도토리몰의 친절한 고객상담 챗봇입니다.
             K-pop 굿즈, 의류 사이즈, 자주 묻는 질문 등에 대해 답변해주세요.
@@ -118,7 +156,7 @@ class DotoriChatbot:
                 {"role": "user", "content": user_message}
             ]
             
-            logger.debug(f"Sending to OpenAI - messages: {messages}")
+            logger.debug(f"OpenAI API 호출 - messages: {messages}")
             
             response = client.chat.completions.create(
                 model="gpt-3.5-turbo",
@@ -128,53 +166,62 @@ class DotoriChatbot:
             )
             
             ai_response = response.choices[0].message.content
-            logger.info(f"AI response generated: {ai_response}")
+            logger.info(f"AI 응답 생성 완료: {ai_response}")
             return ai_response
             
         except Exception as e:
-            logger.error(f"Error generating AI response: {str(e)}", exc_info=True)
-            return None
-    
+            logger.error(f"AI 응답 생성 중 오류 발생: {str(e)}", exc_info=True)
+            return "죄송합니다. 일시적인 오류가 발생했습니다. 잠시 후 다시 시도해주세요."
+            
     def process_message(self, message):
         """메시지를 처리하고 응답을 생성합니다."""
+        if not message:
+            logger.warning("빈 메시지가 전달되었습니다.")
+            return "죄송합니다. 메시지를 이해하지 못했습니다."
+            
         try:
             logger.info(f"메시지 처리 시작: {message}")
+            
+            # 데이터가 비어있는 경우 재로드 시도
+            if not any([self.kpop_data, self.size_data, self.faq_data]):
+                logger.warning("데이터가 비어있어 재로드를 시도합니다.")
+                self.load_data()
             
             # 기본 인사 처리
             if any(greeting in message.lower() for greeting in ["안녕", "hi", "hello", "ㅎㅇ"]):
                 return self.get_ai_response(message)
             
-            # 데이터 상태 확인
-            logger.debug(f"현재 데이터 상태 - K-pop: {len(self.kpop_data)}개, Size: {len(self.size_data)}개, FAQ: {len(self.faq_data)}개")
-            
             context = {}
             
             # 상품 검색
-            logger.debug("상품 검색 시작")
-            product = self.find_product(message)
-            if product:
-                logger.info(f"상품 정보 찾음: {product}")
-                context["product"] = product
+            try:
+                product = self.find_product(message)
+                if product:
+                    logger.info(f"상품 정보 찾음: {product}")
+                    context["product"] = product
+            except Exception as e:
+                logger.error(f"상품 검색 중 오류 발생: {str(e)}", exc_info=True)
             
             # 사이즈 정보 검색
-            logger.debug("사이즈 정보 검색 시작")
-            size = self.find_size_info(message)
-            if size:
-                logger.info(f"사이즈 정보 찾음: {size}")
-                context["size"] = size
+            try:
+                size = self.find_size_info(message)
+                if size:
+                    logger.info(f"사이즈 정보 찾음: {size}")
+                    context["size"] = size
+            except Exception as e:
+                logger.error(f"사이즈 정보 검색 중 오류 발생: {str(e)}", exc_info=True)
             
             # FAQ 검색
-            logger.debug("FAQ 검색 시작")
-            faq = self.find_faq(message)
-            if faq:
-                logger.info(f"FAQ 찾음: {faq}")
-                context["faq"] = faq
+            try:
+                faq = self.find_faq(message)
+                if faq:
+                    logger.info(f"FAQ 찾음: {faq}")
+                    context["faq"] = faq
+            except Exception as e:
+                logger.error(f"FAQ 검색 중 오류 발생: {str(e)}", exc_info=True)
             
             # AI 응답 생성
-            if context:
-                return self.get_ai_response(message, context)
-            else:
-                return self.get_ai_response(message)
+            return self.get_ai_response(message, context if context else None)
             
         except Exception as e:
             logger.error(f"메시지 처리 중 오류 발생: {str(e)}", exc_info=True)
