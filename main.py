@@ -84,27 +84,54 @@ def send_message(sender_id: str, message: str):
             
         url = "https://graph.facebook.com/v18.0/me/messages"
         params = {"access_token": PAGE_ACCESS_TOKEN}
-        headers = {"Content-Type": "application/json"}
+        headers = {
+            "Content-Type": "application/json",
+            "Accept": "application/json"
+        }
         
         data = {
             "recipient": {"id": sender_id},
             "message": {"text": message}
         }
         
+        logger.info(f"페이스북 메시지 전송 시도 - URL: {url}")
         logger.info(f"페이스북 메시지 전송 시도 - 수신자: {sender_id}")
         logger.debug(f"전송 데이터: {json.dumps(data, ensure_ascii=False)}")
         
-        response = requests.post(url, params=params, headers=headers, json=data)
+        # 타임아웃 설정 추가
+        response = requests.post(
+            url, 
+            params=params, 
+            headers=headers, 
+            json=data,
+            timeout=10  # 10초 타임아웃
+        )
+        
+        response_data = response.json() if response.text else {}
+        logger.debug(f"페이스북 응답: {json.dumps(response_data, ensure_ascii=False)}")
         
         if response.status_code == 200:
+            if response_data.get("error"):
+                logger.error(f"페이스북 API 오류: {response_data['error']}")
+                return False
             logger.info(f"메시지 전송 성공 - 수신자: {sender_id}")
             return True
         else:
-            logger.error(f"메시지 전송 실패 - 상태 코드: {response.status_code}, 응답: {response.text}")
+            logger.error(f"메시지 전송 실패 - 상태 코드: {response.status_code}")
+            logger.error(f"오류 응답: {response.text}")
             return False
             
+    except requests.exceptions.Timeout:
+        logger.error("페이스북 API 요청 타임아웃")
+        return False
+    except requests.exceptions.ConnectionError:
+        logger.error("페이스북 서버 연결 실패")
+        return False
     except requests.exceptions.RequestException as e:
         logger.error(f"메시지 전송 중 네트워크 오류 발생: {str(e)}", exc_info=True)
+        return False
+    except json.JSONDecodeError as e:
+        logger.error(f"페이스북 응답 JSON 파싱 오류: {str(e)}", exc_info=True)
         return False
     except Exception as e:
         logger.error(f"메시지 전송 중 예상치 못한 오류 발생: {str(e)}", exc_info=True)
