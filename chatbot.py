@@ -482,11 +482,80 @@ async def global_exception_handler(request: Request, exc: Exception):
     logger.error("스택 트레이스:", exc_info=True)
     return {"status": "error", "message": "Internal server error"}
 
+def verify_page_connection():
+    """페이스북 페이지 연결 상태를 확인합니다."""
+    try:
+        url = "https://graph.facebook.com/v18.0/me"
+        params = {
+            "access_token": PAGE_ACCESS_TOKEN,
+            "fields": "id,name,category"
+        }
+        headers = {
+            "Accept": "application/json"
+        }
+        
+        logger.info("=== 페이지 연결 상태 확인 시작 ===")
+        logger.info(f"URL: {url}")
+        
+        response = requests.get(url, params=params, headers=headers, timeout=10)
+        logger.info(f"Status Code: {response.status_code}")
+        
+        try:
+            response_data = response.json()
+            logger.info(f"Response: {json.dumps(response_data, ensure_ascii=False, indent=2)}")
+            
+            if response.status_code == 200:
+                logger.info(f"페이지 연결 성공!")
+                logger.info(f"페이지 이름: {response_data.get('name')}")
+                logger.info(f"페이지 ID: {response_data.get('id')}")
+                logger.info(f"페이지 카테고리: {response_data.get('category')}")
+                return True, response_data
+            else:
+                logger.error(f"페이지 연결 실패 - HTTP {response.status_code}")
+                if 'error' in response_data:
+                    error = response_data['error']
+                    logger.error(f"오류 메시지: {error.get('message')}")
+                    logger.error(f"오류 타입: {error.get('type')}")
+                    logger.error(f"오류 코드: {error.get('code')}")
+                return False, response_data
+                
+        except json.JSONDecodeError as e:
+            logger.error(f"응답 파싱 오류: {str(e)}")
+            logger.error(f"원본 응답: {response.text}")
+            return False, None
+            
+    except Exception as e:
+        logger.error(f"페이지 연결 확인 중 오류 발생: {str(e)}", exc_info=True)
+        return False, None
+
+@app.get("/check-page")
+async def check_page_connection():
+    """페이지 연결 상태를 확인하는 엔드포인트"""
+    success, data = verify_page_connection()
+    if success:
+        return {
+            "status": "success",
+            "message": "페이지가 정상적으로 연결되어 있습니다.",
+            "page_info": data
+        }
+    else:
+        return {
+            "status": "error",
+            "message": "페이지 연결에 문제가 있습니다.",
+            "error_info": data
+        }
+
 if __name__ == "__main__":
     if not PAGE_ACCESS_TOKEN:
         logger.error("PAGE_ACCESS_TOKEN is not set!")
         exit(1)
         
+    # 서버 시작 시 페이지 연결 상태 확인
+    logger.info("페이지 연결 상태 확인 중...")
+    success, data = verify_page_connection()
+    if not success:
+        logger.error("페이지 연결에 문제가 있습니다!")
+    
     # 서버 실행
     port = int(os.getenv("PORT", "8080"))
     logger.info(f"Starting chatbot server on port {port}...")
