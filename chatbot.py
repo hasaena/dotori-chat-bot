@@ -249,7 +249,11 @@ class DotoriChatbot:
             return "죄송합니다. 일시적인 오류가 발생했습니다. 잠시 후 다시 시도해주세요."
 
 # FastAPI 앱 초기화
-app = FastAPI()
+app = FastAPI(
+    title="도토리몰 챗봇 API",
+    description="Facebook Messenger를 위한 도토리몰 챗봇 API",
+    version="1.0.0"
+)
 
 # 챗봇 인스턴스 생성
 chatbot = DotoriChatbot()
@@ -343,6 +347,21 @@ def send_message(recipient_id: str, message_text: str):
         logger.error(f"Error Message: {str(e)}")
         logger.error("Stack Trace:", exc_info=True)
         return False
+
+@app.get("/")
+@app.get("/index.html")
+async def root():
+    """API 루트 엔드포인트"""
+    return {
+        "status": "online",
+        "message": "도토리몰 챗봇 API가 실행 중입니다.",
+        "endpoints": [
+            {"path": "/", "method": "GET", "description": "API 상태 확인"},
+            {"path": "/webhook", "method": "GET", "description": "페이스북 웹훅 검증"},
+            {"path": "/webhook", "method": "POST", "description": "페이스북 메시지 수신"},
+            {"path": "/check-page", "method": "GET", "description": "페이지 연결 상태 확인"}
+        ]
+    }
 
 @app.get("/webhook")
 async def verify_webhook(request: Request):
@@ -529,20 +548,28 @@ def verify_page_connection():
         return False, None
 
 @app.get("/check-page")
+@app.get("/check-page/")
 async def check_page_connection():
     """페이지 연결 상태를 확인하는 엔드포인트"""
-    success, data = verify_page_connection()
-    if success:
-        return {
-            "status": "success",
-            "message": "페이지가 정상적으로 연결되어 있습니다.",
-            "page_info": data
-        }
-    else:
+    try:
+        success, data = verify_page_connection()
+        if success:
+            return {
+                "status": "success",
+                "message": "페이지가 정상적으로 연결되어 있습니다.",
+                "page_info": data
+            }
+        else:
+            return {
+                "status": "error",
+                "message": "페이지 연결에 문제가 있습니다.",
+                "error_info": data
+            }
+    except Exception as e:
+        logger.error("페이지 연결 확인 중 오류", exc_info=True)
         return {
             "status": "error",
-            "message": "페이지 연결에 문제가 있습니다.",
-            "error_info": data
+            "message": f"페이지 연결 확인 중 오류 발생: {str(e)}"
         }
 
 if __name__ == "__main__":
