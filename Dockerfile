@@ -1,17 +1,13 @@
 FROM python:3.9-slim
-
 WORKDIR /app
 
-# 필요한 파일 복사
-COPY requirements.txt .
-COPY *.py .
-COPY *.json .
+# 기존
+# COPY requirements.txt .
+# COPY *.py .
 
-# 패키지 설치
-RUN pip install --no-cache-dir -r requirements.txt
+# 수정
+COPY requirements.txt /app/
+COPY *.py /app/
 
-# 포트 설정
-ENV PORT 8080
-
-# 실행
-CMD ["python", "chatbot.py"]
+RUN pip install --no-cache-dir -r /app/requirements.txt
+CMD ["python", "/app/chatbot.py"]
