@@ -1,4 +1,6 @@
-# 쇼핑몰 챗봇 프로젝트
+# dotori-chat-bot
+
+## 쇼핑몰 챗봇 프로젝트
 
 이 프로젝트는 쇼핑몰에서 사용할 수 있는 AI 기반 챗봇입니다.
 
@@ -12,15 +14,3 @@
 ## 설치 방법
 ```bash
 pip install -r requirements.txt
-```
-
-## 실행 방법
-```bash
-python main.py
-```
-
-## 기술 스택
-- Python
-- FastAPI
-- OpenAI API
-- SQLite (데이터베이스) 
