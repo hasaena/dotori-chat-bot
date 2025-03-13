@@ -155,12 +155,10 @@ K-pop 굿즈, 의류 사이즈, 자주 묻는 질문 등에 대해 답변해주�
 
             logger.debug(f"ChatOpenAI에 보낼 메시지: {[m.content for m in messages]}")
 
-            # ----- 수정 부분 시작 -----
-            # 기존: response = self.chat_model(messages)
-            # 수정: predict_messages() 사용
-            response = self.chat_model.predict_messages(messages)
+            # 구버전 호환: predict_messages() 대신 __call__ (사용하기)
+            response = self.chat_model(messages)
+            # response 는 AIMessage 등의 객체
             ai_response = response.content
-            # ----- 수정 부분 끝 -----
 
             logger.info(f"AI 응답 생성 완료: {ai_response}")
             return ai_response
@@ -235,13 +233,13 @@ async def webhook(request: Request):
         if body.get("object") == "page":
             for entry in body.get("entry", []):
                 for messaging in entry.get("messaging", []):
-                    # 1) 메시지 아닌 이벤트(예: delivery, read 등)는 무시
+                    # 메시지 아닌 이벤트는 무시 (delivery/read/postback 등)
                     if "message" not in messaging:
                         logger.debug("메시지가 아닌 이벤트 -> 응답 없이 무시")
                         continue
 
                     msg_obj = messaging["message"]
-                    # 2) 텍스트 필드가 없는 메시지도 무시 (예: 이미지, 파일, sticker 등)
+                    # 텍스트 없는 메시지(이미지/파일 등) 무시
                     if "text" not in msg_obj:
                         logger.debug("텍스트가 없는 메시지 -> 무시")
                         continue

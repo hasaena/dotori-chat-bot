@@ -1,0 +1,13 @@
+# .dockerignore
+
+# ignore all by default
+*
+
+# except these:
+!Dockerfile
+!requirements.txt
+!*.py
+!dotori-chat-bot-key.json
+# 만약 사이즈표, kpop_products.json 등을 사용한다면:
+#!kpop_products.json
+#!size_guide.json
