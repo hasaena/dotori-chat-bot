@@ -235,8 +235,19 @@ async def webhook(request: Request):
         if body.get("object") == "page":
             for entry in body.get("entry", []):
                 for messaging in entry.get("messaging", []):
+                    # 1) 메시지 아닌 이벤트(예: delivery, read 등)는 무시
+                    if "message" not in messaging:
+                        logger.debug("메시지가 아닌 이벤트 -> 응답 없이 무시")
+                        continue
+
+                    msg_obj = messaging["message"]
+                    # 2) 텍스트 필드가 없는 메시지도 무시 (예: 이미지, 파일, sticker 등)
+                    if "text" not in msg_obj:
+                        logger.debug("텍스트가 없는 메시지 -> 무시")
+                        continue
+
                     sender_id = messaging["sender"]["id"]
-                    message_text = messaging.get("message", {}).get("text", "")
+                    message_text = msg_obj["text"]
                     logger.info(f"Sender: {sender_id}, Message Text: {message_text}")
 
                     # AI 응답
