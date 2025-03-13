@@ -11,24 +11,17 @@ logger = logging.getLogger(__name__)
 SHEET_ID = "1mBtwo9D7zj0b32TQl6zfyrrrjuM3eMj-7czWyg4UP3o"
 
 def get_sheets_service():
-    """
-    Google Sheets API Service를 생성하여 반환합니다.
-    GOOGLE_APPLICATION_CREDENTIALS 환경변수로부터
-    서비스 계정 JSON 파일 경로를 가져와 사용합니다.
-    """
     creds_path = os.getenv("GOOGLE_APPLICATION_CREDENTIALS")
     if not creds_path:
         logger.error("GOOGLE_APPLICATION_CREDENTIALS 환경변수가 설정되지 않았습니다.")
         return None
-
     logger.info(f"Credentials file path: {creds_path}")
+
     try:
-        # service_account_file()로 파일을 직접 읽어와 자격증명 객체 생성
         credentials = service_account.Credentials.from_service_account_file(
             creds_path,
             scopes=["https://www.googleapis.com/auth/spreadsheets"]
         )
-        # Google Sheets API 서비스 빌드
         service = build("sheets", "v4", credentials=credentials)
         return service
     except Exception as e:

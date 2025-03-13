@@ -16,5 +16,8 @@ RUN pip install --no-cache-dir -r requirements.txt
 # (선택) 로컬에서 "docker run -p 8080:8080" 할 때 편의를 위해 EXPOSE
 EXPOSE 8080
 
-# 6) 컨테이너 실행 시 "python /app/chatbot.py"
+# 6) dotori-chat-bot-key.json (실제 서비스계정 JSON) 복사
+COPY dotori-chat-bot-key.json /app/dotori-chat-bot-key.json
+
+# 7) 컨테이너 실행 시 "python /app/chatbot.py"
 CMD ["python", "/app/chatbot.py"]
