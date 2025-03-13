@@ -8,5 +8,7 @@ google-auth-httplib2==0.2.0
 google-auth-oauthlib==1.2.0
 gspread==6.1.4
 openai==0.28.0
-python-dateutil==2.9.0.post0 
-langchain_community
+python-dateutil==2.9.0.post0
+
+# langchain, 버전 지정
+langchain>=0.0.100
