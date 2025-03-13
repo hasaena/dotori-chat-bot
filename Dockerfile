@@ -18,7 +18,7 @@ EXPOSE 8080
 
 # 6) dotori-chat-bot-key.json (실제 서비스계정 JSON) 복사
 # COPY dotori-chat-bot-key.json /app/dotori-chat-bot-key.json
-COPY chat-bot-key.json /app/chat-bot-key.json
+COPY chat-bot-key.json /app/dotori-chat-bot-key.json
 
 
 # 7) 컨테이너 실행 시 "python /app/chatbot.py"
